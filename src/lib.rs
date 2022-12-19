@@ -6,6 +6,8 @@ use core::fmt::Debug;
 #[concordium(state_parameter = "S")]
 struct State<S> {
     admin: AccountAddress,
+    // curatorList
+    // validatorList
     user: StateMap<AccountAddress, UserState, S>,
 }
 
@@ -23,6 +25,12 @@ struct TransferAdminParam {
 #[derive(Serial, Deserial, SchemaType)]
 struct AddrParam {
     addr: AccountAddress,
+}
+
+#[derive(Debug, Serialize, SchemaType)]
+struct UpgradeParam {
+    module:  ModuleReference,
+    migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
 #[derive(Serial, Deserial, SchemaType)]
@@ -147,6 +155,30 @@ fn contract_remove_validator<S: HasStateApi>(
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_validator = false;
     });
+    Ok(())
+}
+
+#[receive(
+    contract = "overlay-users",
+    name = "upgrade",
+    parameter = "UpgradeParam",
+    mutable
+)]
+fn contract_upgrade<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &mut impl HasHost<State<S>, StateApiType = S>,
+) -> ReceiveResult<()> {
+    ensure!(ctx.sender().matches_account(&ctx.owner()));
+    let params: UpgradeParam = ctx.parameter_cursor().get()?;
+    host.upgrade(params.module)?;
+    if let Some((func, parameter)) = params.migrate {
+        host.invoke_contract_raw(
+            &ctx.self_address(),
+            parameter.as_parameter(),
+            func.as_entrypoint_name(),
+            Amount::zero(),
+        )?;
+    }
     Ok(())
 }
 
