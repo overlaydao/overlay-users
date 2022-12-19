@@ -6,9 +6,9 @@ use core::fmt::Debug;
 #[concordium(state_parameter = "S")]
 struct State<S> {
     admin: AccountAddress,
-    // curatorList
-    // validatorList
     user: StateMap<AccountAddress, UserState, S>,
+    curator_list: Vec<AccountAddress>,
+    validator_list: Vec<AccountAddress>,
 }
 
 #[derive(Serial, Deserial)]
@@ -36,6 +36,8 @@ struct UpgradeParam {
 #[derive(Serial, Deserial, SchemaType)]
 struct ViewAdminRes {
     admin: AccountAddress,
+    curator_list: Vec<AccountAddress>,
+    validator_list: Vec<AccountAddress>,
 }
 
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
@@ -54,7 +56,9 @@ fn contract_init<S: HasStateApi>(
 ) -> InitResult<State<S>> {
     let state = State {
         admin: ctx.init_origin(),
-        user: state_builder.new_map()
+        user: state_builder.new_map(),
+        curator_list: Vec::new(),
+        validator_list: Vec::new(),
     };
     Ok(state)
 }
@@ -95,6 +99,7 @@ fn contract_add_curator<S: HasStateApi>(
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_curator = true;
     });
+    state.curator_list.push(params.addr);
     Ok(())
 }
 
@@ -115,6 +120,7 @@ fn contract_remove_curator<S: HasStateApi>(
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_curator = false;
     });
+    state.curator_list.retain(|x| *x != params.addr);
     Ok(())
 }
 
@@ -135,6 +141,7 @@ fn contract_add_validator<S: HasStateApi>(
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_validator = true;
     });
+    state.validator_list.push(params.addr);
     Ok(())
 }
 
@@ -155,6 +162,7 @@ fn contract_remove_validator<S: HasStateApi>(
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_validator = false;
     });
+    state.validator_list.retain(|x| *x != params.addr);
     Ok(())
 }
 
@@ -195,6 +203,8 @@ fn view_admin<S: HasStateApi>(
     ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
     Ok(ViewAdminRes {
         admin: state.admin,
+        curator_list: state.curator_list.clone(),
+        validator_list: state.validator_list.clone(),
     })
 }
 
