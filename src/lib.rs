@@ -29,7 +29,7 @@ struct AddrParam {
 
 #[derive(Debug, Serialize, SchemaType)]
 struct UpgradeParam {
-    module:  ModuleReference,
+    module: ModuleReference,
     migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
@@ -76,7 +76,7 @@ fn contract_transfer_admin<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: TransferAdminParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.admin = params.admin;
     Ok(())
@@ -94,7 +94,7 @@ fn contract_add_curator<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_curator = true;
@@ -115,7 +115,7 @@ fn contract_remove_curator<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_curator = false;
@@ -136,7 +136,7 @@ fn contract_add_validator<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_validator = true;
@@ -157,7 +157,7 @@ fn contract_remove_validator<S: HasStateApi>(
 ) -> ContractResult<()> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_validator = false;
@@ -200,7 +200,7 @@ fn view_admin<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewAdminRes> {
     let state = host.state();
-    ensure!(ctx.sender() == Address::Account(state.admin), Error::InvalidCaller);
+    ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     Ok(ViewAdminRes {
         admin: state.admin,
         curator_list: state.curator_list.clone(),
