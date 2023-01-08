@@ -14,7 +14,7 @@ struct State<S> {
     validator_list: Vec<AccountAddress>,
 }
 
-#[derive(Serial, Deserial)]
+#[derive(Serial, Deserial, SchemaType)]
 struct UserState {
     is_curator: bool,
     is_validator: bool,
