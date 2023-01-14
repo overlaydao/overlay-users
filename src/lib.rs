@@ -304,14 +304,19 @@ fn view_admin<S: HasStateApi>(
     parameter = "AddrParam",
     return_value = "UserState"
 )]
-fn view_user<'a, S: HasStateApi + 'a>(
-    ctx: &'a impl HasReceiveContext,
-    host: &'a impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<StateRef<'a, UserState>> {
+fn view_user<S: HasStateApi>(
+    ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<UserState> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state();
     let user_state = state.user.get(&params.addr).unwrap();
-    Ok(user_state)
+    Ok(UserState {
+        is_curator: user_state.is_curator.clone(),
+        is_validator: user_state.is_validator.clone(),
+        curated_projects: user_state.curated_projects.clone(),
+        validated_projects: user_state.validated_projects.clone()
+    })
 }
 
 #[cfg(test)]

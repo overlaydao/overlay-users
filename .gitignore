@@ -23,3 +23,5 @@ Cargo.lock
 
 tmp*
 test.sh
+
+overlay_users
