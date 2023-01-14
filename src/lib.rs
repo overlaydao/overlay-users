@@ -63,14 +63,6 @@ struct ViewAdminRes {
     validator_list: Vec<AccountAddress>,
 }
 
-#[derive(Serial, Deserial, SchemaType)]
-struct ViewUserStateResponse {
-    is_curator: bool,
-    is_validator: bool,
-    curated_projects: Vec<ProjectId>,
-    validated_projects: Vec<ProjectId>,
-}
-
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum Error {
     #[from(ParseError)]
@@ -322,21 +314,25 @@ fn contract_view_admin<S: HasStateApi>(
     contract = "overlay-users",
     name = "view_user",
     parameter = "AddrParam",
-    return_value = "ViewUserStateResponse",
+    return_value = "UserState",
 )]
 fn contract_view_user<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<ViewUserStateResponse> {
+) -> ContractResult<UserState> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state();
-    let user_state = state.user.get(&params.addr).unwrap();
-    Ok(ViewUserStateResponse {
-        is_curator: user_state.is_curator,
-        is_validator: user_state.is_validator,
-        curated_projects: user_state.curated_projects.clone(),
-        validated_projects: user_state.validated_projects.clone(),
-    })
+    let user_state_ref = state.user.get(&params.addr);
+    let user_state: UserState = match user_state_ref {
+        None => UserState {
+            is_curator: false,
+            is_validator: false,
+            curated_projects: Vec::new(),
+            validated_projects: Vec::new(),
+        },
+        Some(_) => user_state_ref.unwrap().clone()
+    };
+    Ok(user_state)
 }
 
 type ViewUsersResponse = Vec<(AccountAddress, UserState)>;
