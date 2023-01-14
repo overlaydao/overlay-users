@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 type ProjectId = String;
 
-#[derive(Serial, DeserialWithState)]
+#[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
     admin: AccountAddress,
@@ -14,7 +14,7 @@ struct State<S> {
     validator_list: Vec<AccountAddress>,
 }
 
-#[derive(Serial, Deserial, SchemaType)]
+#[derive(Serial, Deserial, SchemaType, Clone)]
 struct UserState {
     is_curator: bool,
     is_validator: bool,
@@ -61,6 +61,14 @@ struct ViewAdminRes {
     project_contract_addr: ContractAddress,
     curator_list: Vec<AccountAddress>,
     validator_list: Vec<AccountAddress>,
+}
+
+#[derive(Serial, Deserial, SchemaType)]
+struct ViewUserStateResponse {
+    is_curator: bool,
+    is_validator: bool,
+    curated_projects: Vec<ProjectId>,
+    validated_projects: Vec<ProjectId>,
 }
 
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
@@ -139,9 +147,15 @@ fn contract_add_curator<S: HasStateApi>(
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
-    state.user.entry(params.addr).and_modify(|user_state| {
-        user_state.is_curator = true;
+    let mut user_state = state.user.entry(params.addr).or_insert_with(|| UserState {
+        is_curator: true,
+        is_validator: false,
+        curated_projects: Vec::new(),
+        validated_projects: Vec::new(),
     });
+
+    user_state.is_curator = true;
+
     state.curator_list.push(params.addr);
     Ok(())
 }
@@ -181,9 +195,15 @@ fn contract_add_validator<S: HasStateApi>(
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
-    state.user.entry(params.addr).and_modify(|user_state| {
-        user_state.is_validator = true;
+    let mut user_state = state.user.entry(params.addr).or_insert_with(|| UserState {
+        is_curator: false,
+        is_validator: true,
+        curated_projects: Vec::new(),
+        validated_projects: Vec::new(),
     });
+
+    user_state.is_validator = true;
+
     state.validator_list.push(params.addr);
     Ok(())
 }
@@ -284,7 +304,7 @@ fn contract_upgrade<S: HasStateApi>(
     name = "view_admin",
     return_value = "ViewAdminRes"
 )]
-fn view_admin<S: HasStateApi>(
+fn contract_view_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewAdminRes> {
@@ -302,22 +322,45 @@ fn view_admin<S: HasStateApi>(
     contract = "overlay-users",
     name = "view_user",
     parameter = "AddrParam",
-    return_value = "UserState"
+    return_value = "ViewUserStateResponse",
 )]
-fn view_user<S: HasStateApi>(
+fn contract_view_user<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<UserState> {
+) -> ContractResult<ViewUserStateResponse> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state();
     let user_state = state.user.get(&params.addr).unwrap();
-    Ok(UserState {
-        is_curator: user_state.is_curator.clone(),
-        is_validator: user_state.is_validator.clone(),
+    Ok(ViewUserStateResponse {
+        is_curator: user_state.is_curator,
+        is_validator: user_state.is_validator,
         curated_projects: user_state.curated_projects.clone(),
-        validated_projects: user_state.validated_projects.clone()
+        validated_projects: user_state.validated_projects.clone(),
     })
 }
+
+type ViewUsersResponse = Vec<(AccountAddress, UserState)>;
+#[receive(
+    contract = "overlay-users",
+    name = "view_users",
+    return_value = "ViewUsersResponse"
+)]
+fn contract_view_users<S: HasStateApi>(
+    _ctx: &impl HasReceiveContext,
+    host: &impl HasHost<State<S>, StateApiType = S>,
+) -> ContractResult<ViewUsersResponse> {
+    let users = &host.state().user;
+    let mut users_response = Vec::new();
+    for (account_address, user_state) in users.iter() {
+        users_response.push((
+            account_address.clone(),
+            user_state.clone()
+        ));
+    }
+
+    Ok(users_response)
+}
+
 
 #[cfg(test)]
 mod tests {
