@@ -367,12 +367,12 @@ mod tests {
     use concordium_std::hashes::HashBytes;
     use test_infrastructure::*;
 
-    fn claim_user_state_eq(left: UserState, right: UserState) -> bool {
+    /// test utilities to check equality of two user states.
+    fn claim_user_state_eq(left: UserState, right: UserState) {
         claim_eq!(left.is_curator, right.is_curator);
         claim_eq!(left.is_validator, right.is_validator);
         claim_eq!(left.curated_projects, right.curated_projects);
         claim_eq!(left.validated_projects, right.validated_projects);
-        true
     }
 
     #[concordium_test]
@@ -381,7 +381,7 @@ mod tests {
         // invoker will be an admin
         let invoker = AccountAddress([0; 32]);
         let mut ctx = TestInitContext::empty();
-        ctx.set_init_origin(invoker.clone());
+        ctx.set_init_origin(invoker);
 
         let mut state_builder = TestStateBuilder::new();
 
@@ -408,7 +408,7 @@ mod tests {
         let try_to_transfer_to = AccountAddress([2; 32]);
 
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(admin.clone());
+        ctx.set_invoker(admin);
         let mut state_builder = TestStateBuilder::new();
         let state = State {
             admin,
@@ -421,7 +421,7 @@ mod tests {
 
         // create parameters
         let params = TransferAdminParam {
-            admin: try_to_transfer_to.clone(),
+            admin: try_to_transfer_to,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -471,7 +471,7 @@ mod tests {
         let admin = AccountAddress([0; 32]);
 
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(admin.clone());
+        ctx.set_invoker(admin);
         let mut state_builder = TestStateBuilder::new();
         let state = State {
             admin,
@@ -485,7 +485,7 @@ mod tests {
         // create parameters
         let project_contract_addr = ContractAddress::new(1, 2);
         let params = AddProjectContractParam {
-            project_contract_addr: project_contract_addr.clone(),
+            project_contract_addr,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -541,7 +541,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: false,
@@ -559,9 +559,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
-            addr: curator.clone(),
-        };
+        let params = AddrParam { addr: curator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -575,7 +573,7 @@ mod tests {
             .map(|(addr, state)| (addr.clone(), state.clone()))
             .collect();
         claim_eq!(users.len(), 2);
-        claim_eq!(state.curator_list, vec![curator.clone()]);
+        claim_eq!(state.curator_list, vec![curator]);
         claim!(!users.get(&existing_user).unwrap().is_curator);
         claim!(users.get(&curator).unwrap().is_curator);
     }
@@ -591,7 +589,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: false,
@@ -610,7 +608,7 @@ mod tests {
 
         // create parameters
         let params = AddrParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -625,7 +623,7 @@ mod tests {
             .map(|(addr, state)| (addr.clone(), state.clone()))
             .collect();
         claim_eq!(users.len(), 1);
-        claim_eq!(state.curator_list, vec![existing_user.clone()]);
+        claim_eq!(state.curator_list, vec![existing_user]);
         claim!(users.get(&existing_user).unwrap().is_curator);
     }
 
@@ -671,7 +669,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: true,
                 is_validator: false,
@@ -683,14 +681,14 @@ mod tests {
             admin,
             project_contract_addr: ContractAddress::new(0, 0),
             user,
-            curator_list: vec![existing_user.clone()],
+            curator_list: vec![existing_user],
             validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
         let params = AddrParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -716,7 +714,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: true,
                 is_validator: false,
@@ -728,7 +726,7 @@ mod tests {
             admin,
             project_contract_addr: ContractAddress::new(0, 0),
             user,
-            curator_list: vec![existing_user.clone()],
+            curator_list: vec![existing_user],
             validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
@@ -748,7 +746,7 @@ mod tests {
             .map(|(addr, state)| (addr.clone(), state.clone()))
             .collect();
         claim_eq!(users.len(), 1);
-        claim_eq!(state.curator_list, vec![existing_user.clone()]);
+        claim_eq!(state.curator_list, vec![existing_user]);
         claim!(users.get(&existing_user).unwrap().is_curator);
     }
 
@@ -795,7 +793,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: false,
@@ -813,9 +811,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
-            addr: validator.clone(),
-        };
+        let params = AddrParam { addr: validator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -829,7 +825,7 @@ mod tests {
             .map(|(addr, state)| (addr.clone(), state.clone()))
             .collect();
         claim_eq!(users.len(), 2);
-        claim_eq!(state.validator_list, vec![validator.clone()]);
+        claim_eq!(state.validator_list, vec![validator]);
         claim!(!users.get(&existing_user).unwrap().is_validator);
         claim!(users.get(&validator).unwrap().is_validator);
     }
@@ -845,7 +841,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: false,
@@ -864,7 +860,7 @@ mod tests {
 
         // create parameters
         let params = AddrParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -879,7 +875,7 @@ mod tests {
             .map(|(addr, state)| (addr.clone(), state.clone()))
             .collect();
         claim_eq!(users.len(), 1);
-        claim_eq!(state.validator_list, vec![existing_user.clone()]);
+        claim_eq!(state.validator_list, vec![existing_user]);
         claim!(users.get(&existing_user).unwrap().is_validator);
     }
 
@@ -925,7 +921,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: true,
@@ -938,13 +934,13 @@ mod tests {
             project_contract_addr: ContractAddress::new(0, 0),
             user,
             curator_list: Vec::new(),
-            validator_list: vec![existing_user.clone()],
+            validator_list: vec![existing_user],
         };
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
         let params = AddrParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -970,7 +966,7 @@ mod tests {
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: true,
@@ -983,7 +979,7 @@ mod tests {
             project_contract_addr: ContractAddress::new(0, 0),
             user,
             curator_list: Vec::new(),
-            validator_list: vec![existing_user.clone()],
+            validator_list: vec![existing_user],
         };
         let mut host = TestHost::new(state, state_builder);
 
@@ -1004,7 +1000,7 @@ mod tests {
             .map(|(addr, state)| (addr.clone(), state.clone()))
             .collect();
         claim_eq!(users.len(), 1);
-        claim_eq!(state.validator_list, vec![existing_user.clone()]);
+        claim_eq!(state.validator_list, vec![existing_user]);
         claim!(users.get(&existing_user).unwrap().is_validator);
     }
 
@@ -1045,11 +1041,11 @@ mod tests {
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(Address::Contract(project_contract_addr.clone()));
+        ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: true,
@@ -1069,7 +1065,7 @@ mod tests {
         // create parameters
         let project_id: ProjectId = "TEST-PRJ".into();
         let params = CurateParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
             project_id: project_id.clone(),
         };
         let params_byte = to_bytes(&params);
@@ -1097,7 +1093,7 @@ mod tests {
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(Address::Contract(project_contract_addr.clone()));
+        ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
             admin: AccountAddress([0; 32]),
@@ -1110,7 +1106,7 @@ mod tests {
 
         // create parameters
         let params = CurateParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
             project_id: "TEST-PRJ".into(),
         };
         let params_byte = to_bytes(&params);
@@ -1166,11 +1162,11 @@ mod tests {
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(Address::Contract(project_contract_addr.clone()));
+        ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let mut user = state_builder.new_map();
         user.insert(
-            existing_user.clone(),
+            existing_user,
             UserState {
                 is_curator: false,
                 is_validator: true,
@@ -1190,7 +1186,7 @@ mod tests {
         // create parameters
         let project_id: ProjectId = "TEST-PRJ".into();
         let params = ValidateParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
             project_id: project_id.clone(),
         };
         let params_byte = to_bytes(&params);
@@ -1218,7 +1214,7 @@ mod tests {
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_sender(Address::Contract(project_contract_addr.clone()));
+        ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
             admin: AccountAddress([0; 32]),
@@ -1231,7 +1227,7 @@ mod tests {
 
         // create parameters
         let params = ValidateParam {
-            addr: existing_user.clone(),
+            addr: existing_user,
             project_id: "TEST-PRJ".into(),
         };
         let params_byte = to_bytes(&params);
@@ -1287,7 +1283,7 @@ mod tests {
         let owner = AccountAddress([0; 32]);
         let suspicious = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_owner(owner.clone());
+        ctx.set_owner(owner);
         ctx.set_sender(Address::Account(suspicious));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
@@ -1320,15 +1316,15 @@ mod tests {
         let curator = AccountAddress([1; 32]);
         let validator = AccountAddress([2; 32]);
         let mut ctx = TestReceiveContext::empty();
-        ctx.set_invoker(admin.clone());
+        ctx.set_invoker(admin);
         // setup state
         let mut state_builder = TestStateBuilder::new();
         let state = State {
-            admin: admin.clone(),
-            project_contract_addr: project_contract_addr.clone(),
+            admin,
+            project_contract_addr,
             user: state_builder.new_map(),
-            curator_list: vec![curator.clone()],
-            validator_list: vec![validator.clone()],
+            curator_list: vec![curator],
+            validator_list: vec![validator],
         };
         let mut host = TestHost::new(state, state_builder);
 
@@ -1432,7 +1428,7 @@ mod tests {
                 is_curator: false,
                 is_validator: true,
                 curated_projects: Vec::new(),
-                validated_projects: vec![validated_project_id.clone()],
+                validated_projects: vec![validated_project_id],
             },
         );
         let state = State {
