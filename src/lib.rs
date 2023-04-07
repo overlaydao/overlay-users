@@ -243,6 +243,7 @@ fn contract_curate<S: HasStateApi>(
     );
 
     state.user.entry(params.addr).and_modify(|user_state| {
+        // TODO confirm it's ok there saved duplicated project_id...
         user_state.curated_projects.push(params.project_id);
     });
     Ok(())
@@ -266,6 +267,7 @@ fn contract_validate<S: HasStateApi>(
     );
 
     state.user.entry(params.addr).and_modify(|user_state| {
+        // TODO confirm it's ok there saved duplicated project_id...
         user_state.validated_projects.push(params.project_id);
     });
     Ok(())
@@ -1023,6 +1025,127 @@ mod tests {
 
         // invoke method
         let result = contract_remove_validator(&ctx, &mut host);
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.curate successfully add project id to user entry.
+    fn test_contract_curate() {
+        let project_contract_addr = ContractAddress::new(0, 0);
+        let existing_user = AccountAddress([1; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(Address::Contract(project_contract_addr.clone()));
+        let mut state_builder = TestStateBuilder::new();
+        let mut user = state_builder.new_map();
+        user.insert(
+            existing_user.clone(),
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let state = State {
+            admin: AccountAddress([0; 32]),
+            project_contract_addr,
+            user,
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let project_id: ProjectId = "TEST-PRJ".into();
+        let params = CurateParam {
+            addr: existing_user.clone(),
+            project_id: project_id.clone(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_curate(&ctx, &mut host);
+        claim!(result.is_ok());
+        let state = host.state();
+        let users: HashMap<AccountAddress, UserState> = state
+            .user
+            .iter()
+            .map(|(addr, state)| (addr.clone(), state.clone()))
+            .collect();
+        claim_eq!(users.len(), 1);
+        claim_eq!(
+            users.get(&existing_user).unwrap().curated_projects,
+            vec![project_id]
+        );
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.curate succeed even if the input user has not been entried.
+    fn test_contract_curate_with_no_effect() {
+        let project_contract_addr = ContractAddress::new(0, 0);
+        let existing_user = AccountAddress([1; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(Address::Contract(project_contract_addr.clone()));
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin: AccountAddress([0; 32]),
+            project_contract_addr,
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = CurateParam {
+            addr: existing_user.clone(),
+            project_id: "TEST-PRJ".into(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_curate(&ctx, &mut host);
+        claim!(result.is_ok());
+        let state = host.state();
+        let users: HashMap<AccountAddress, UserState> = state
+            .user
+            .iter()
+            .map(|(addr, state)| (addr.clone(), state.clone()))
+            .collect();
+        claim_eq!(users.len(), 0);
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.curate was invoked by non-project contract account.
+    fn test_contract_curate_invoked_by_non_project_contract_addr() {
+        let project_contract_addr = ContractAddress::new(0, 0);
+        let suspicious = ContractAddress::new(0, 1);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_sender(Address::Contract(suspicious));
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin: AccountAddress([0; 32]),
+            project_contract_addr,
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = CurateParam {
+            addr: AccountAddress([2; 32]),
+            project_id: "TEST-PRJ".into(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_curate(&ctx, &mut host);
         claim!(result.is_err());
         claim_eq!(result.err(), Some(Error::InvalidCaller));
     }
