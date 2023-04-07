@@ -612,4 +612,35 @@ mod tests {
         claim_eq!(users.len(), 1);
         claim!(users.get(&existing_user).unwrap().is_curator);
     }
+
+    #[concordium_test]
+    /// Test that overlay-users.contract_add_curator was invoked by non-admin account.
+    fn test_contract_add_curator_invoked_by_non_admin() {
+        let admin = AccountAddress([0; 32]);
+        let suspicious = AccountAddress([1; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(suspicious);
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = AddrParam {
+            addr: AccountAddress([2; 32]),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_add_curator(&ctx, &mut host);
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
 }
