@@ -1302,4 +1302,58 @@ mod tests {
         let result = contract_upgrade(&ctx, &mut host);
         claim!(result.is_err());
     }
+
+    #[concordium_test]
+    /// Test that overlay-users.contract_view_admin returns administrative data.
+    fn test_contract_view_admin_invoked_by_admin() {
+        let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(1, 2);
+        let curator = AccountAddress([1; 32]);
+        let validator = AccountAddress([2; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin.clone());
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin: admin.clone(),
+            project_contract_addr: project_contract_addr.clone(),
+            user: state_builder.new_map(),
+            curator_list: vec![curator.clone()],
+            validator_list: vec![validator.clone()],
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // invoke method
+        let result = contract_view_admin(&ctx, &mut host);
+        claim!(result.is_ok());
+        let view = result.unwrap();
+        claim_eq!(view.admin, admin);
+        claim_eq!(view.project_contract_addr, project_contract_addr);
+        claim_eq!(view.curator_list, vec![curator]);
+        claim_eq!(view.validator_list, vec![validator]);
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.contract_view_admin should fail when invoked by non-admin
+    fn test_contract_view_admin_invoked_by_not_admin() {
+        let admin = AccountAddress([0; 32]);
+        let suspicious = AccountAddress([1; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(suspicious);
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(1, 2),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // invoke method
+        let result = contract_view_admin(&ctx, &mut host);
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
 }
