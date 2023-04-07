@@ -139,14 +139,16 @@ fn contract_add_curator<S: HasStateApi>(
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
-    let mut user_state = state.user.entry(params.addr).or_insert_with(|| UserState {
-        is_curator: true,
-        is_validator: false,
-        curated_projects: Vec::new(),
-        validated_projects: Vec::new(),
-    });
-
-    user_state.is_curator = true;
+    state
+        .user
+        .entry(params.addr)
+        .and_modify(|entry| entry.is_curator = true)
+        .or_insert_with(|| UserState {
+            is_curator: true,
+            is_validator: false,
+            curated_projects: Vec::new(),
+            validated_projects: Vec::new(),
+        });
 
     state.curator_list.push(params.addr);
     Ok(())
@@ -378,10 +380,236 @@ mod tests {
         claim_eq!(state.admin, invoker);
         claim_eq!(
             state.project_contract_addr,
-            ContractAddress::new(0u64, 0u64),
+            ContractAddress::new(0u64, 0u64)
         );
         claim!(state.user.is_empty());
         claim!(state.curator_list.is_empty());
         claim!(state.validator_list.is_empty());
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.transfer_admin was successfully invoked by admin account.
+    fn test_contract_transfer_admin_invoked_by_admin() {
+        let admin = AccountAddress([0; 32]);
+        let try_to_transfer_to = AccountAddress([2; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin.clone());
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = TransferAdminParam {
+            admin: try_to_transfer_to.clone(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_transfer_admin(&ctx, &mut host);
+        claim!(result.is_ok());
+        let state = host.state();
+        claim_eq!(state.admin, try_to_transfer_to);
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.transfer_admin was invoked by non-admin account.
+    fn test_contract_transfer_admin_invoked_by_non_admin() {
+        let admin = AccountAddress([0; 32]);
+        let suspicious = AccountAddress([1; 32]);
+        let try_to_transfer_to = AccountAddress([2; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(suspicious);
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = TransferAdminParam {
+            admin: try_to_transfer_to,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_transfer_admin(&ctx, &mut host);
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.add_project_contract was successfully invoked by admin account.
+    fn test_contract_add_project_contract_invoked_by_admin() {
+        let admin = AccountAddress([0; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin.clone());
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let project_contract_addr = ContractAddress::new(1, 2);
+        let params = AddProjectContractParam {
+            project_contract_addr: project_contract_addr.clone(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_add_project_contract(&ctx, &mut host);
+        claim!(result.is_ok());
+        let state = host.state();
+        claim_eq!(state.project_contract_addr, project_contract_addr);
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.add_project_contract was invoked by non-admin account.
+    fn test_contract_add_project_contract_invoked_by_non_admin() {
+        let admin = AccountAddress([0; 32]);
+        let suspicious = AccountAddress([1; 32]);
+
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(suspicious);
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let project_contract_addr = ContractAddress::new(1, 2);
+        let params = AddProjectContractParam {
+            project_contract_addr,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_add_project_contract(&ctx, &mut host);
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.add_curator handle new user entry.
+    fn test_contract_add_new_curator_invoked_by_admin() {
+        let admin = AccountAddress([0; 32]);
+        let existing_user = AccountAddress([1; 32]);
+        let curator = AccountAddress([2; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let mut user = state_builder.new_map();
+        user.insert(
+            existing_user.clone(),
+            UserState {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user,
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = AddrParam {
+            addr: curator.clone(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_add_curator(&ctx, &mut host);
+        claim!(result.is_ok());
+        let state = host.state();
+        let users: HashMap<AccountAddress, UserState> = state
+            .user
+            .iter()
+            .map(|(addr, state)| (addr.clone(), state.clone()))
+            .collect();
+        claim_eq!(users.len(), 2);
+        claim!(!users.get(&existing_user).unwrap().is_curator);
+        claim!(users.get(&curator).unwrap().is_curator);
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.add_curator handle existing user entry.
+    fn test_contract_modify_curator_invoked_by_admin() {
+        let admin = AccountAddress([0; 32]);
+        let existing_user = AccountAddress([1; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let mut user = state_builder.new_map();
+        user.insert(
+            existing_user.clone(),
+            UserState {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user,
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = AddrParam {
+            addr: existing_user.clone(),
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_add_curator(&ctx, &mut host);
+        claim!(result.is_ok());
+        let state = host.state();
+        let users: HashMap<AccountAddress, UserState> = state
+            .user
+            .iter()
+            .map(|(addr, state)| (addr.clone(), state.clone()))
+            .collect();
+        claim_eq!(users.len(), 1);
+        claim!(users.get(&existing_user).unwrap().is_curator);
     }
 }
