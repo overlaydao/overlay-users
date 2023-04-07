@@ -328,16 +328,16 @@ fn contract_view_user<S: HasStateApi>(
 ) -> ContractResult<UserState> {
     let params: AddrParam = ctx.parameter_cursor().get()?;
     let state = host.state();
-    let user_state_ref = state.user.get(&params.addr);
-    let user_state: UserState = match user_state_ref {
-        None => UserState {
+    let user_state = state
+        .user
+        .get(&params.addr)
+        .map(|user_state_ref| user_state_ref.clone())
+        .unwrap_or(UserState {
             is_curator: false,
             is_validator: false,
             curated_projects: Vec::new(),
             validated_projects: Vec::new(),
-        },
-        Some(_) => user_state_ref.unwrap().clone(),
-    };
+        });
     Ok(user_state)
 }
 
@@ -1355,5 +1355,100 @@ mod tests {
         let result = contract_view_admin(&ctx, &mut host);
         claim!(result.is_err());
         claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.contract_view_user returns single user data.
+    fn test_contract_view_user_for_existing_user() {
+        let admin = AccountAddress([0; 32]);
+        let existing_user = AccountAddress([1; 32]);
+        let validated_project_id: ProjectId = "TEST-PRJ".into();
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_invoker(admin);
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let mut user = state_builder.new_map();
+        user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: vec![validated_project_id.clone()],
+            },
+        );
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(1, 2),
+            user,
+            curator_list: vec![],
+            validator_list: vec![existing_user],
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = AddrParam {
+            addr: existing_user,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_view_user(&ctx, &mut host);
+        claim!(result.is_ok());
+        let view = result.unwrap();
+        claim!(!view.is_curator);
+        claim!(view.is_validator);
+        claim!(view.curated_projects.is_empty());
+        claim_eq!(view.validated_projects, vec![validated_project_id]);
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.contract_view_user returns default user data.
+    fn test_contract_view_user_for_non_existing_user() {
+        let admin = AccountAddress([0; 32]);
+        let anyone = AccountAddress([100; 32]);
+        let existing_user = AccountAddress([1; 32]);
+        let non_existing_user = AccountAddress([2; 32]);
+        let validated_project_id: ProjectId = "TEST-PRJ".into();
+        let mut ctx = TestReceiveContext::empty();
+        // anyone can call this contract function.
+        ctx.set_invoker(anyone);
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let mut user = state_builder.new_map();
+        user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: vec![validated_project_id.clone()],
+            },
+        );
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(1, 2),
+            user,
+            curator_list: vec![],
+            validator_list: vec![existing_user],
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = AddrParam {
+            addr: non_existing_user,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_view_user(&ctx, &mut host);
+        claim!(result.is_ok());
+        let view = result.unwrap();
+        claim!(!view.is_curator);
+        claim!(!view.is_validator);
+        claim!(view.curated_projects.is_empty());
+        claim!(view.validated_projects.is_empty());
     }
 }
