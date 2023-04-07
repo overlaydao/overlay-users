@@ -363,6 +363,7 @@ fn contract_view_users<S: HasStateApi>(
 #[concordium_cfg_test]
 mod tests {
     use super::*;
+    use concordium_std::hashes::HashBytes;
     use test_infrastructure::*;
 
     #[concordium_test]
@@ -1269,5 +1270,36 @@ mod tests {
         let result = contract_validate(&ctx, &mut host);
         claim!(result.is_err());
         claim_eq!(result.err(), Some(Error::InvalidCaller));
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.upgrade can not be invoked by non-admin.
+    fn test_contract_upgrade_invoked_by_non_admin() {
+        let owner = AccountAddress([0; 32]);
+        let suspicious = AccountAddress([1; 32]);
+        let mut ctx = TestReceiveContext::empty();
+        ctx.set_owner(owner.clone());
+        ctx.set_sender(Address::Account(suspicious));
+        let mut state_builder = TestStateBuilder::new();
+        let state = State {
+            admin: owner,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // create parameters
+        let params = UpgradeParam {
+            module: HashBytes::new([0; 32]),
+            migrate: None,
+        };
+        let params_byte = to_bytes(&params);
+        ctx.set_parameter(&params_byte);
+
+        // invoke method
+        let result = contract_upgrade(&ctx, &mut host);
+        claim!(result.is_err());
     }
 }
