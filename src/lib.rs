@@ -352,11 +352,12 @@ fn contract_view_users<S: HasStateApi>(
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewUsersResponse> {
     let users = &host.state().user;
-    let mut users_response = Vec::new();
-    for (account_address, user_state) in users.iter() {
-        users_response.push((account_address.clone(), user_state.clone()));
-    }
-
+    let users_response = users
+        .iter()
+        .map(|(account_address_ref, user_state_ref)| {
+            (account_address_ref.clone(), user_state_ref.clone())
+        })
+        .collect();
     Ok(users_response)
 }
 
@@ -365,6 +366,14 @@ mod tests {
     use super::*;
     use concordium_std::hashes::HashBytes;
     use test_infrastructure::*;
+
+    fn claim_user_state_eq(left: UserState, right: UserState) -> bool {
+        claim_eq!(left.is_curator, right.is_curator);
+        claim_eq!(left.is_validator, right.is_validator);
+        claim_eq!(left.curated_projects, right.curated_projects);
+        claim_eq!(left.validated_projects, right.validated_projects);
+        true
+    }
 
     #[concordium_test]
     /// Test that init succeeds.
@@ -1450,5 +1459,61 @@ mod tests {
         claim!(!view.is_validator);
         claim!(view.curated_projects.is_empty());
         claim!(view.validated_projects.is_empty());
+    }
+
+    #[concordium_test]
+    /// Test that overlay-users.contract_view_users returns all user data.
+    fn test_contract_view_users() {
+        let admin = AccountAddress([0; 32]);
+        let anyone = AccountAddress([100; 32]);
+        let existing_user1 = (
+            AccountAddress([1; 32]),
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: vec!["TEST-PRJ1".into()],
+            },
+        );
+        let existing_user2 = (
+            AccountAddress([2; 32]),
+            UserState {
+                is_curator: true,
+                is_validator: false,
+                curated_projects: vec!["TEST-PRJ2".into()],
+                validated_projects: Vec::new(),
+            },
+        );
+        let mut ctx = TestReceiveContext::empty();
+        // anyone can call this contract function.
+        ctx.set_invoker(anyone);
+        // setup state
+        let mut state_builder = TestStateBuilder::new();
+        let mut user = state_builder.new_map();
+        user.insert(existing_user1.0, existing_user1.1.clone());
+        user.insert(existing_user2.0, existing_user2.1.clone());
+        let state = State {
+            admin,
+            project_contract_addr: ContractAddress::new(1, 2),
+            user,
+            curator_list: vec![existing_user2.0],
+            validator_list: vec![existing_user1.0],
+        };
+        let mut host = TestHost::new(state, state_builder);
+
+        // invoke method
+        let result = contract_view_users(&ctx, &mut host);
+        claim!(result.is_ok());
+        let view = result.unwrap();
+        claim_eq!(view.len(), 2);
+        for (addr, state) in view {
+            if addr == existing_user1.0 {
+                claim_user_state_eq(state, existing_user1.1.clone());
+            } else if addr == existing_user2.0 {
+                claim_user_state_eq(state, existing_user2.1.clone());
+            } else {
+                fail!("unexpected user address returned...");
+            }
+        }
     }
 }
