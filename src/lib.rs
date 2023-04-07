@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 use concordium_std::*;
 use core::fmt::Debug;
 
@@ -314,7 +314,7 @@ fn contract_view_admin<S: HasStateApi>(
     contract = "overlay-users",
     name = "view_user",
     parameter = "AddrParam",
-    return_value = "UserState",
+    return_value = "UserState"
 )]
 fn contract_view_user<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
@@ -330,7 +330,7 @@ fn contract_view_user<S: HasStateApi>(
             curated_projects: Vec::new(),
             validated_projects: Vec::new(),
         },
-        Some(_) => user_state_ref.unwrap().clone()
+        Some(_) => user_state_ref.unwrap().clone(),
     };
     Ok(user_state)
 }
@@ -348,21 +348,40 @@ fn contract_view_users<S: HasStateApi>(
     let users = &host.state().user;
     let mut users_response = Vec::new();
     for (account_address, user_state) in users.iter() {
-        users_response.push((
-            account_address.clone(),
-            user_state.clone()
-        ));
+        users_response.push((account_address.clone(), user_state.clone()));
     }
 
     Ok(users_response)
 }
 
-
-#[cfg(test)]
+#[concordium_cfg_test]
 mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
+    use super::*;
+    use test_infrastructure::*;
+
+    #[concordium_test]
+    /// Test that init succeeds.
+    fn test_init() {
+        // invoker will be an admin
+        let invoker = AccountAddress([0; 32]);
+        let mut ctx = TestInitContext::empty();
+        ctx.set_init_origin(invoker.clone());
+
+        let mut state_builder = TestStateBuilder::new();
+
+        // execute init
+        let result = contract_init(&ctx, &mut state_builder);
+
+        // check init result
+        claim!(result.is_ok());
+        let state = result.unwrap();
+        claim_eq!(state.admin, invoker);
+        claim_eq!(
+            state.project_contract_addr,
+            ContractAddress::new(0u64, 0u64),
+        );
+        claim!(state.user.is_empty());
+        claim!(state.curator_list.is_empty());
+        claim!(state.validator_list.is_empty());
     }
 }
