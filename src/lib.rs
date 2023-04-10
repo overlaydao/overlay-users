@@ -150,6 +150,7 @@ fn contract_add_curator<S: HasStateApi>(
             validated_projects: Vec::new(),
         });
 
+    // TODO duplicate check (should push only when the address is not included).
     state.curator_list.push(params.addr);
     Ok(())
 }
@@ -200,6 +201,7 @@ fn contract_add_validator<S: HasStateApi>(
             validated_projects: Vec::new(),
         });
 
+    // TODO duplicate check (should push only when the address is not included).
     state.validator_list.push(params.addr);
     Ok(())
 }
@@ -243,6 +245,7 @@ fn contract_curate<S: HasStateApi>(
     );
 
     state.user.entry(params.addr).and_modify(|user_state| {
+        // TODO is it OK to add project id for non_curator?
         // TODO confirm it's ok there saved duplicated project_id...
         user_state.curated_projects.push(params.project_id);
     });
@@ -362,18 +365,111 @@ fn contract_view_users<S: HasStateApi>(
 }
 
 #[concordium_cfg_test]
+/// implements Debug for State inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl<S: HasStateApi> Debug for State<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "admin: {:?}, project_contract_addr: {:?}, ",
+            self.admin, self.project_contract_addr
+        )?;
+        for (address, state) in self.user.iter() {
+            write!(f, "user_address: {:?}, user_state: {:?}, ", address, state)?;
+        }
+        write!(
+            f,
+            "curator_list: {:?}, validator_list: {:?}",
+            self.curator_list, self.validator_list
+        )
+    }
+}
+
+#[concordium_cfg_test]
+/// implements PartialEq for `claim_eq` inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl<S: HasStateApi> PartialEq for State<S> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.admin != other.admin {
+            return false;
+        }
+        if self.project_contract_addr != other.project_contract_addr {
+            return false;
+        }
+        if self.user.iter().count() != other.user.iter().count() {
+            return false;
+        }
+        for (my_user_address, my_user_state) in self.user.iter() {
+            let other_user_state = other.user.get(&my_user_address);
+            if other_user_state.is_none() {
+                return false;
+            }
+            let other_user_state = other_user_state.unwrap();
+            if my_user_state.clone() != other_user_state.clone() {
+                return false;
+            }
+        }
+        if self.curator_list != other.curator_list {
+            return false;
+        }
+        if self.validator_list != other.validator_list {
+            return false;
+        }
+        true
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+#[concordium_cfg_test]
+/// implements Debug for UserState inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl Debug for UserState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "is_curator: {}, is_validator: {}, curated_projects: {:?}, validated_projects: {:?}",
+            self.is_curator, self.is_validator, self.curated_projects, self.validated_projects
+        )
+    }
+}
+
+#[concordium_cfg_test]
+/// implements PartialEq for `claim_eq` inside test functions.
+/// this implementation will be build only when `concordium-std/wasm-test` feature is active.
+/// (e.g. when launched by `cargo concordium test`)
+impl PartialEq for UserState {
+    fn eq(&self, other: &Self) -> bool {
+        if self.is_curator != other.is_curator {
+            return false;
+        }
+        if self.is_validator != other.is_validator {
+            return false;
+        }
+        if self.curated_projects != other.curated_projects {
+            return false;
+        }
+        if self.validated_projects != other.validated_projects {
+            return false;
+        }
+        true
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+#[concordium_cfg_test]
 mod tests {
     use super::*;
     use concordium_std::hashes::HashBytes;
     use test_infrastructure::*;
-
-    /// test utilities to check equality of two user states.
-    fn claim_user_state_eq(left: UserState, right: UserState) {
-        claim_eq!(left.is_curator, right.is_curator);
-        claim_eq!(left.is_validator, right.is_validator);
-        claim_eq!(left.curated_projects, right.curated_projects);
-        claim_eq!(left.validated_projects, right.validated_projects);
-    }
 
     #[concordium_test]
     /// Test that init succeeds.
@@ -417,6 +513,13 @@ mod tests {
             curator_list: Vec::new(),
             validator_list: Vec::new(),
         };
+        let expected_state = State {
+            admin: try_to_transfer_to,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
@@ -429,8 +532,12 @@ mod tests {
         // invoke method
         let result = contract_transfer_admin(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        claim_eq!(state.admin, try_to_transfer_to);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -469,6 +576,7 @@ mod tests {
     /// Test that overlay-users.add_project_contract was successfully invoked by admin account.
     fn test_contract_add_project_contract_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr_to_be_set = ContractAddress::new(1, 2);
 
         let mut ctx = TestReceiveContext::empty();
         ctx.set_invoker(admin);
@@ -480,12 +588,18 @@ mod tests {
             curator_list: Vec::new(),
             validator_list: Vec::new(),
         };
+        let expected_state = State {
+            admin,
+            project_contract_addr: project_contract_addr_to_be_set,
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let project_contract_addr = ContractAddress::new(1, 2);
         let params = AddProjectContractParam {
-            project_contract_addr,
+            project_contract_addr: project_contract_addr_to_be_set,
         };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
@@ -493,8 +607,12 @@ mod tests {
         // invoke method
         let result = contract_add_project_contract(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        claim_eq!(state.project_contract_addr, project_contract_addr);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -533,6 +651,7 @@ mod tests {
     /// Test that overlay-users.add_curator handle new user entry.
     fn test_contract_add_new_curator_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let curator = AccountAddress([2; 32]);
         let mut ctx = TestReceiveContext::empty();
@@ -551,9 +670,35 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
             curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        expected_user.insert(
+            curator,
+            UserState {
+                is_curator: true,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: vec![curator],
             validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
@@ -566,22 +711,19 @@ mod tests {
         // invoke method
         let result = contract_add_curator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 2);
-        claim_eq!(state.curator_list, vec![curator]);
-        claim!(!users.get(&existing_user).unwrap().is_curator);
-        claim!(users.get(&curator).unwrap().is_curator);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
     /// Test that overlay-users.add_curator handle existing user entry.
     fn test_contract_modify_curator_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_invoker(admin);
@@ -599,9 +741,26 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
             curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: true,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: vec![existing_user],
             validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
@@ -616,15 +775,12 @@ mod tests {
         // invoke method
         let result = contract_add_curator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 1);
-        claim_eq!(state.curator_list, vec![existing_user]);
-        claim!(users.get(&existing_user).unwrap().is_curator);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -662,6 +818,7 @@ mod tests {
     /// Test that overlay-users.contract_remove_curator successfully remove the input
     fn test_contract_remove_curator_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_invoker(admin);
@@ -679,9 +836,26 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
             curator_list: vec![existing_user],
+            validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: Vec::new(),
             validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
@@ -696,9 +870,12 @@ mod tests {
         // invoke method
         let result = contract_remove_curator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        claim!(state.user.is_empty());
-        claim!(state.curator_list.is_empty());
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -706,6 +883,7 @@ mod tests {
     /// curator
     fn test_contract_remove_curator_with_no_effect_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let not_curator = AccountAddress([2; 32]);
         let mut ctx = TestReceiveContext::empty();
@@ -724,8 +902,25 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
+            curator_list: vec![existing_user],
+            validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: true,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
             curator_list: vec![existing_user],
             validator_list: Vec::new(),
         };
@@ -739,15 +934,12 @@ mod tests {
         // invoke method
         let result = contract_remove_curator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 1);
-        claim_eq!(state.curator_list, vec![existing_user]);
-        claim!(users.get(&existing_user).unwrap().is_curator);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -785,6 +977,7 @@ mod tests {
     /// Test that overlay-users.add_validator handle new user entry.
     fn test_contract_add_new_validator_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let validator = AccountAddress([2; 32]);
         let mut ctx = TestReceiveContext::empty();
@@ -803,10 +996,36 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
             curator_list: Vec::new(),
             validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        expected_user.insert(
+            validator,
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: Vec::new(),
+            validator_list: vec![validator],
         };
         let mut host = TestHost::new(state, state_builder);
 
@@ -818,22 +1037,19 @@ mod tests {
         // invoke method
         let result = contract_add_validator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 2);
-        claim_eq!(state.validator_list, vec![validator]);
-        claim!(!users.get(&existing_user).unwrap().is_validator);
-        claim!(users.get(&validator).unwrap().is_validator);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
     /// Test that overlay-users.add_validator handle existing user entry.
     fn test_contract_modify_validator_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_invoker(admin);
@@ -851,10 +1067,27 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
             curator_list: Vec::new(),
             validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: Vec::new(),
+            validator_list: vec![existing_user],
         };
         let mut host = TestHost::new(state, state_builder);
 
@@ -868,15 +1101,12 @@ mod tests {
         // invoke method
         let result = contract_add_validator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 1);
-        claim_eq!(state.validator_list, vec![existing_user]);
-        claim!(users.get(&existing_user).unwrap().is_validator);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -914,6 +1144,7 @@ mod tests {
     /// Test that overlay-users.contract_remove_validator successfully remove the input
     fn test_contract_remove_validator_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_invoker(admin);
@@ -931,10 +1162,27 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
             curator_list: Vec::new(),
             validator_list: vec![existing_user],
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: false,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
 
@@ -948,9 +1196,12 @@ mod tests {
         // invoke method
         let result = contract_remove_validator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        claim!(state.user.is_empty());
-        claim!(state.validator_list.is_empty());
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -958,6 +1209,7 @@ mod tests {
     /// validator
     fn test_contract_remove_validator_with_no_effect_invoked_by_admin() {
         let admin = AccountAddress([0; 32]);
+        let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let not_validator = AccountAddress([2; 32]);
         let mut ctx = TestReceiveContext::empty();
@@ -976,8 +1228,25 @@ mod tests {
         );
         let state = State {
             admin,
-            project_contract_addr: ContractAddress::new(0, 0),
+            project_contract_addr,
             user,
+            curator_list: Vec::new(),
+            validator_list: vec![existing_user],
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
             curator_list: Vec::new(),
             validator_list: vec![existing_user],
         };
@@ -993,15 +1262,12 @@ mod tests {
         // invoke method
         let result = contract_remove_validator(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 1);
-        claim_eq!(state.validator_list, vec![existing_user]);
-        claim!(users.get(&existing_user).unwrap().is_validator);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -1038,8 +1304,11 @@ mod tests {
     #[concordium_test]
     /// Test that overlay-users.curate successfully add project id to user entry.
     fn test_contract_curate() {
+        let admin = AccountAddress([0; 32]);
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
+        let project_id: ProjectId = "TEST-PRJ".into();
+
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
@@ -1047,23 +1316,39 @@ mod tests {
         user.insert(
             existing_user,
             UserState {
-                is_curator: false,
-                is_validator: true,
+                is_curator: true,
+                is_validator: false,
                 curated_projects: Vec::new(),
                 validated_projects: Vec::new(),
             },
         );
         let state = State {
-            admin: AccountAddress([0; 32]),
+            admin,
             project_contract_addr,
             user,
-            curator_list: Vec::new(),
+            curator_list: vec![existing_user],
+            validator_list: Vec::new(),
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: true,
+                is_validator: false,
+                curated_projects: vec![project_id.clone()],
+                validated_projects: Vec::new(),
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: vec![existing_user],
             validator_list: Vec::new(),
         };
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let project_id: ProjectId = "TEST-PRJ".into();
         let params = CurateParam {
             addr: existing_user,
             project_id: project_id.clone(),
@@ -1074,29 +1359,32 @@ mod tests {
         // invoke method
         let result = contract_curate(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 1);
+        let actual_state = host.state();
         claim_eq!(
-            users.get(&existing_user).unwrap().curated_projects,
-            vec![project_id]
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
     #[concordium_test]
     /// Test that overlay-users.curate succeed even if the input user has not been entried.
     fn test_contract_curate_with_no_effect() {
+        let admin = AccountAddress([0; 32]);
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
-            admin: AccountAddress([0; 32]),
+            admin,
+            project_contract_addr,
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let expected_state = State {
+            admin,
             project_contract_addr,
             user: state_builder.new_map(),
             curator_list: Vec::new(),
@@ -1115,13 +1403,12 @@ mod tests {
         // invoke method
         let result = contract_curate(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 0);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -1159,8 +1446,11 @@ mod tests {
     #[concordium_test]
     /// Test that overlay-users.validate successfully add project id to user entry.
     fn test_contract_validate() {
+        let admin = AccountAddress([0; 32]);
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
+        let project_id: ProjectId = "TEST-PRJ".into();
+
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
@@ -1175,16 +1465,32 @@ mod tests {
             },
         );
         let state = State {
-            admin: AccountAddress([0; 32]),
+            admin,
             project_contract_addr,
             user,
             curator_list: Vec::new(),
-            validator_list: Vec::new(),
+            validator_list: vec![existing_user],
+        };
+        let mut expected_user = state_builder.new_map();
+        expected_user.insert(
+            existing_user,
+            UserState {
+                is_curator: false,
+                is_validator: true,
+                curated_projects: Vec::new(),
+                validated_projects: vec![project_id.clone()],
+            },
+        );
+        let expected_state = State {
+            admin,
+            project_contract_addr,
+            user: expected_user,
+            curator_list: Vec::new(),
+            validator_list: vec![existing_user],
         };
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let project_id: ProjectId = "TEST-PRJ".into();
         let params = ValidateParam {
             addr: existing_user,
             project_id: project_id.clone(),
@@ -1195,29 +1501,32 @@ mod tests {
         // invoke method
         let result = contract_validate(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 1);
+        let actual_state = host.state();
         claim_eq!(
-            users.get(&existing_user).unwrap().validated_projects,
-            vec![project_id]
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
     }
 
     #[concordium_test]
     /// Test that overlay-users.validate succeed even if the input user has not been entried.
     fn test_contract_validate_with_no_effect() {
+        let admin = AccountAddress([0; 32]);
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
         let mut ctx = TestReceiveContext::empty();
         ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
-            admin: AccountAddress([0; 32]),
+            admin,
+            project_contract_addr,
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+        let expected_state = State {
+            admin,
             project_contract_addr,
             user: state_builder.new_map(),
             curator_list: Vec::new(),
@@ -1236,13 +1545,12 @@ mod tests {
         // invoke method
         let result = contract_validate(&ctx, &mut host);
         claim!(result.is_ok());
-        let state = host.state();
-        let users: HashMap<AccountAddress, UserState> = state
-            .user
-            .iter()
-            .map(|(addr, state)| (addr.clone(), state.clone()))
-            .collect();
-        claim_eq!(users.len(), 0);
+        let actual_state = host.state();
+        claim_eq!(
+            *actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
+        );
     }
 
     #[concordium_test]
@@ -1504,9 +1812,9 @@ mod tests {
         claim_eq!(view.len(), 2);
         for (addr, state) in view {
             if addr == existing_user1.0 {
-                claim_user_state_eq(state, existing_user1.1.clone());
+                claim_eq!(state, existing_user1.1.clone());
             } else if addr == existing_user2.0 {
-                claim_user_state_eq(state, existing_user2.1.clone());
+                claim_eq!(state, existing_user2.1.clone());
             } else {
                 fail!("unexpected user address returned...");
             }
