@@ -270,6 +270,7 @@ fn contract_validate<S: HasStateApi>(
     );
 
     state.user.entry(params.addr).and_modify(|user_state| {
+        // TODO is it OK to add project id for non_validator?
         // TODO confirm it's ok there saved duplicated project_id...
         user_state.validated_projects.push(params.project_id);
     });
