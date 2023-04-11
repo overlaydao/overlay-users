@@ -482,20 +482,25 @@ mod tests {
 
         let mut state_builder = TestStateBuilder::new();
 
+        let expected_state = State {
+            admin: invoker,
+            project_contract_addr: ContractAddress::new(0, 0),
+            user: state_builder.new_map(),
+            curator_list: Vec::new(),
+            validator_list: Vec::new(),
+        };
+
         // execute init
         let result = contract_init(&ctx, &mut state_builder);
 
         // check init result
         claim!(result.is_ok());
-        let state = result.unwrap();
-        claim_eq!(state.admin, invoker);
+        let actual_state = result.unwrap();
         claim_eq!(
-            state.project_contract_addr,
-            ContractAddress::new(0u64, 0u64)
+            actual_state,
+            expected_state,
+            "state has been changed unexpectedly..."
         );
-        claim!(state.user.is_empty());
-        claim!(state.curator_list.is_empty());
-        claim!(state.validator_list.is_empty());
     }
 
     #[concordium_test]
