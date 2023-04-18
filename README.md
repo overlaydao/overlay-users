@@ -3,7 +3,7 @@
 This is the [Concordium](https://concordium.com/) smart contract modelling
 [OVERLAY](https://overlay.global/) users.
 
-This smart module stores user data of [OVERLAY](https://overlay.global/).
+This smart contract module stores user data of [OVERLAY](https://overlay.global/).
 
 # How to build
 
@@ -39,3 +39,7 @@ Then you can find wasm file built under the following directory.
 ```shell
 % cargo concordium test
 ```
+
+# LICENSE
+
+see [LICENSE](./LICENSE) file.
