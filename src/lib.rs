@@ -1,8 +1,9 @@
 //! OVERLAY users smart contract.
 //!
 //! This is the repository that stores OVERLAY user's data.
-//! * OVERLAY user could be curator or validator.
+//! * OVERLAY user could be a curator or a validator.
 //! * When project admin marks the OVERLAY user as curator, then its project id is stored in the user state.
+//! * When project admin marks the OVERLAY user as validator, then its project id is stored in the user state.
 
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 use concordium_std::*;
@@ -10,16 +11,23 @@ use core::fmt::Debug;
 
 type ProjectId = String;
 
+/// The state of the OVERLAY users
 #[derive(Serial, DeserialWithState, StateClone)]
 #[concordium(state_parameter = "S")]
 struct State<S> {
+    /// Owner/Admin address of this contract module.
     admin: AccountAddress,
+    /// overlay-projects contract address that will control curator / validator data.
     project_contract_addr: ContractAddress,
+    /// OVERLAY user data map.
     user: StateMap<AccountAddress, UserState, S>,
+    /// All curator account addresses.
     curator_list: Vec<AccountAddress>,
+    /// All validator account addresses.
     validator_list: Vec<AccountAddress>,
 }
 
+/// The state of a single OVERLAY user
 #[derive(Serial, Deserial, SchemaType, Clone)]
 struct UserState {
     is_curator: bool,
@@ -28,39 +36,56 @@ struct UserState {
     validated_projects: Vec<ProjectId>,
 }
 
+/// The parameter schema for `transfer_admin` function.
 #[derive(Serial, Deserial, SchemaType)]
 struct TransferAdminParam {
     admin: AccountAddress,
 }
 
+/// The parameter schema for `add_project_contract` function.
 #[derive(Serial, Deserial, SchemaType)]
 struct AddProjectContractParam {
     project_contract_addr: ContractAddress,
 }
 
+/// Single account address parameter that is commonly used.
 #[derive(Serial, Deserial, SchemaType)]
 struct AddrParam {
     addr: AccountAddress,
 }
+/// The parameter schema for `add_curator` function.
+type AddCuratorParam = AddrParam;
+/// The parameter schema for `remove_curator` function.
+type RemoveCuratorParam = AddrParam;
+/// The parameter schema for `add_validator` function.
+type AddValidatorParam = AddrParam;
+/// The parameter schema for `remove_validator` function.
+type RemoveValidatorParam = AddrParam;
+/// The parameter schema for `view_user` function.
+type ViewUserParam = AddrParam;
 
+/// The parameter schema for `curate` function.
 #[derive(Serial, Deserial, SchemaType)]
 struct CurateParam {
     addr: AccountAddress,
     project_id: ProjectId,
 }
 
+/// The parameter schema for `validate` function.
 #[derive(Serial, Deserial, SchemaType)]
 struct ValidateParam {
     addr: AccountAddress,
     project_id: ProjectId,
 }
 
+/// The parameter schema for `upgrade` function.
 #[derive(Debug, Serialize, SchemaType)]
 struct UpgradeParam {
     module: ModuleReference,
     migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
 
+/// The response schema for `view_admin` function.
 #[derive(Serial, Deserial, SchemaType)]
 struct ViewAdminRes {
     admin: AccountAddress,
@@ -69,15 +94,25 @@ struct ViewAdminRes {
     validator_list: Vec<AccountAddress>,
 }
 
+/// The response schema for `view_user` function.
+type ViewUserResponse = UserState;
+
+/// The response schema for `view_users` function.
+type ViewUsersResponse = Vec<(AccountAddress, UserState)>;
+
+/// Custom error definitions of OVERLAY users smart contract.
 #[derive(Debug, PartialEq, Eq, Reject, Serial, SchemaType)]
 enum Error {
     #[from(ParseError)]
     ParseParamsError,
     InvalidCaller,
+    InvalidArgument,
 }
 
 type ContractResult<A> = Result<A, Error>;
 
+/// The smart contract module init function.
+/// Although anyone can init this module, this function is expected to be called by OVERLAY team.
 #[init(contract = "overlay-users")]
 fn contract_init<S: HasStateApi>(
     ctx: &impl HasInitContext,
@@ -93,6 +128,11 @@ fn contract_init<S: HasStateApi>(
     Ok(state)
 }
 
+/// Transfer admin of this module to another account.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
 #[receive(
     contract = "overlay-users",
     name = "transfer_admin",
@@ -107,11 +147,15 @@ fn contract_transfer_admin<S: HasStateApi>(
     let params: TransferAdminParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-
     state.admin = params.admin;
     Ok(())
 }
 
+/// Set associated overlay-projects contract address.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
 #[receive(
     contract = "overlay-users",
     name = "add_project_contract",
@@ -126,25 +170,29 @@ fn contract_add_project_contract<S: HasStateApi>(
     let params: AddProjectContractParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-
     state.project_contract_addr = params.project_contract_addr;
     Ok(())
 }
 
+/// Update inputted user account as a curator.
+/// If the requested user address dose not exist in the state, default user data would be created.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
 #[receive(
     contract = "overlay-users",
     name = "add_curator",
-    parameter = "AddrParam",
+    parameter = "AddCuratorParam",
     mutable
 )]
 fn contract_add_curator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: AddrParam = ctx.parameter_cursor().get()?;
+    let params: AddCuratorParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-
     state
         .user
         .entry(params.addr)
@@ -155,26 +203,30 @@ fn contract_add_curator<S: HasStateApi>(
             curated_projects: Vec::new(),
             validated_projects: Vec::new(),
         });
-
-    // TODO duplicate check (should push only when the address is not included).
-    state.curator_list.push(params.addr);
+    if !state.curator_list.contains(&params.addr) {
+        state.curator_list.push(params.addr);
+    }
     Ok(())
 }
 
+/// Unmark inputted user account as a curator.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
 #[receive(
     contract = "overlay-users",
     name = "remove_curator",
-    parameter = "AddrParam",
+    parameter = "RemoveCuratorParam",
     mutable
 )]
 fn contract_remove_curator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: AddrParam = ctx.parameter_cursor().get()?;
+    let params: RemoveCuratorParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-
     state.user.entry(params.addr).and_modify(|user_state| {
         user_state.is_curator = false;
     });
@@ -182,20 +234,25 @@ fn contract_remove_curator<S: HasStateApi>(
     Ok(())
 }
 
+/// Update inputted user account as a validator.
+/// If the requested user address dose not exist in the state, default user data would be created.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
 #[receive(
     contract = "overlay-users",
     name = "add_validator",
-    parameter = "AddrParam",
+    parameter = "AddValidatorParam",
     mutable
 )]
 fn contract_add_validator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: AddrParam = ctx.parameter_cursor().get()?;
+    let params: AddValidatorParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
-
     state
         .user
         .entry(params.addr)
@@ -206,23 +263,28 @@ fn contract_add_validator<S: HasStateApi>(
             curated_projects: Vec::new(),
             validated_projects: Vec::new(),
         });
-
-    // TODO duplicate check (should push only when the address is not included).
-    state.validator_list.push(params.addr);
+    if !state.validator_list.contains(&params.addr) {
+        state.validator_list.push(params.addr);
+    }
     Ok(())
 }
 
+/// Unmark inputted user account as a validator.
+///
+/// Caller: current admin account.
+/// Reject if:
+/// * Caller is not the current admin account.
 #[receive(
     contract = "overlay-users",
     name = "remove_validator",
-    parameter = "AddrParam",
+    parameter = "RemoveValidatorParam",
     mutable
 )]
 fn contract_remove_validator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: AddrParam = ctx.parameter_cursor().get()?;
+    let params: RemoveValidatorParam = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
@@ -233,6 +295,15 @@ fn contract_remove_validator<S: HasStateApi>(
     Ok(())
 }
 
+/// Add project id to the user curated projects state.
+///
+/// Caller: associated overlay-projects smart contract
+/// Reject if:
+/// * Caller is not the associated overlay-projects smart contract address
+/// * The inputted user is not registered as a curator.
+///
+/// This function is designed to be called by the following smart contract functions.
+/// * overlay-projects.curate_project
 #[receive(
     contract = "overlay-users",
     name = "curate",
@@ -249,15 +320,25 @@ fn contract_curate<S: HasStateApi>(
         ctx.sender() == Address::Contract(state.project_contract_addr),
         Error::InvalidCaller
     );
-
-    state.user.entry(params.addr).and_modify(|user_state| {
-        // TODO is it OK to add project id for non_curator?
-        // TODO confirm it's ok there saved duplicated project_id...
-        user_state.curated_projects.push(params.project_id);
-    });
+    let target_user = state.user.get_mut(&params.addr);
+    ensure!(target_user.is_some(), Error::InvalidArgument);
+    let mut target_user = target_user.unwrap();
+    ensure!(target_user.is_curator, Error::InvalidArgument);
+    if !target_user.curated_projects.contains(&params.project_id) {
+        target_user.curated_projects.push(params.project_id);
+    }
     Ok(())
 }
 
+/// Add project id to the user validated projects state.
+///
+/// Caller: associated overlay-projects smart contract
+/// Reject if:
+/// * Caller is not the associated overlay-projects smart contract address
+/// * The inputted user is not registered as a validator.
+///
+/// This function is designed to be called by the following smart contract functions.
+/// * overlay-projects.validate_project
 #[receive(
     contract = "overlay-users",
     name = "validate",
@@ -274,15 +355,18 @@ fn contract_validate<S: HasStateApi>(
         ctx.sender() == Address::Contract(state.project_contract_addr),
         Error::InvalidCaller
     );
-
-    state.user.entry(params.addr).and_modify(|user_state| {
-        // TODO is it OK to add project id for non_validator?
-        // TODO confirm it's ok there saved duplicated project_id...
-        user_state.validated_projects.push(params.project_id);
-    });
+    let target_user = state.user.get_mut(&params.addr);
+    ensure!(target_user.is_some(), Error::InvalidArgument);
+    let mut target_user = target_user.unwrap();
+    ensure!(target_user.is_validator, Error::InvalidArgument);
+    if !target_user.validated_projects.contains(&params.project_id) {
+        target_user.validated_projects.push(params.project_id);
+    }
     Ok(())
 }
 
+/// Smart contract module upgrade function.
+/// For more information see https://developer.concordium.software/en/mainnet/smart-contracts/guides/upgradeable-contract.html#guide-upgradable-contract
 #[receive(
     contract = "overlay-users",
     name = "upgrade",
@@ -342,14 +426,14 @@ fn contract_view_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "view_user",
-    parameter = "AddrParam",
+    parameter = "ViewUserParam",
     return_value = "UserState"
 )]
 fn contract_view_user<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
-) -> ContractResult<UserState> {
-    let params: AddrParam = ctx.parameter_cursor().get()?;
+) -> ContractResult<ViewUserResponse> {
+    let params: ViewUserParam = ctx.parameter_cursor().get()?;
     let state = host.state();
     let user_state = state
         .user
@@ -363,8 +447,6 @@ fn contract_view_user<S: HasStateApi>(
         });
     Ok(user_state)
 }
-
-type ViewUsersResponse = Vec<(AccountAddress, UserState)>;
 
 /// View the all user state.
 ///
@@ -733,7 +815,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam { addr: curator };
+        let params = AddCuratorParam { addr: curator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -795,7 +877,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = AddCuratorParam {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -831,7 +913,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = AddCuratorParam {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -890,7 +972,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = RemoveCuratorParam {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -956,7 +1038,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam { addr: not_curator };
+        let params = RemoveCuratorParam { addr: not_curator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -990,7 +1072,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = RemoveCuratorParam {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -1059,7 +1141,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam { addr: validator };
+        let params = AddValidatorParam { addr: validator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -1121,7 +1203,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = AddValidatorParam {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -1157,7 +1239,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = AddValidatorParam {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -1216,7 +1298,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = RemoveValidatorParam {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -1282,7 +1364,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = RemoveValidatorParam {
             addr: not_validator,
         };
         let params_byte = to_bytes(&params);
@@ -1318,7 +1400,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = RemoveValidatorParam {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -1397,8 +1479,8 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Test that overlay-users.curate succeed even if the input user has not been entried.
-    fn test_contract_curate_with_no_effect() {
+    /// Test that overlay-users.curate fails if the input user has not been added as a curator.
+    fn test_contract_curate_fails_with_no_user() {
         let admin = AccountAddress([0; 32]);
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
@@ -1406,13 +1488,6 @@ mod tests {
         ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
-            admin,
-            project_contract_addr,
-            user: state_builder.new_map(),
-            curator_list: Vec::new(),
-            validator_list: Vec::new(),
-        };
-        let expected_state = State {
             admin,
             project_contract_addr,
             user: state_builder.new_map(),
@@ -1431,13 +1506,8 @@ mod tests {
 
         // invoke method
         let result = contract_curate(&ctx, &mut host);
-        claim!(result.is_ok());
-        let actual_state = host.state();
-        claim_eq!(
-            *actual_state,
-            expected_state,
-            "state has been changed unexpectedly..."
-        );
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidArgument));
     }
 
     #[concordium_test]
@@ -1539,8 +1609,8 @@ mod tests {
     }
 
     #[concordium_test]
-    /// Test that overlay-users.validate succeed even if the input user has not been entried.
-    fn test_contract_validate_with_no_effect() {
+    /// Test that overlay-users.validate fails if the input user has not been added as a validator.
+    fn test_contract_validate_fails_with_no_user() {
         let admin = AccountAddress([0; 32]);
         let project_contract_addr = ContractAddress::new(0, 0);
         let existing_user = AccountAddress([1; 32]);
@@ -1548,13 +1618,6 @@ mod tests {
         ctx.set_sender(Address::Contract(project_contract_addr));
         let mut state_builder = TestStateBuilder::new();
         let state = State {
-            admin,
-            project_contract_addr,
-            user: state_builder.new_map(),
-            curator_list: Vec::new(),
-            validator_list: Vec::new(),
-        };
-        let expected_state = State {
             admin,
             project_contract_addr,
             user: state_builder.new_map(),
@@ -1573,13 +1636,8 @@ mod tests {
 
         // invoke method
         let result = contract_validate(&ctx, &mut host);
-        claim!(result.is_ok());
-        let actual_state = host.state();
-        claim_eq!(
-            *actual_state,
-            expected_state,
-            "state has been changed unexpectedly..."
-        );
+        claim!(result.is_err());
+        claim_eq!(result.err(), Some(Error::InvalidArgument));
     }
 
     #[concordium_test]
