@@ -1,3 +1,9 @@
+//! OVERLAY users smart contract.
+//!
+//! This is the repository that stores OVERLAY user's data.
+//! * OVERLAY user could be curator or validator.
+//! * When project admin marks the OVERLAY user as curator, then its project id is stored in the user state.
+
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 use concordium_std::*;
 use core::fmt::Debug;
@@ -301,6 +307,9 @@ fn contract_upgrade<S: HasStateApi>(
     Ok(())
 }
 
+/// View the admin state.
+///
+/// Caller: Admin account only.
 #[receive(
     contract = "overlay-users",
     name = "view_admin",
@@ -320,6 +329,16 @@ fn contract_view_admin<S: HasStateApi>(
     })
 }
 
+/// View the user state.
+/// If the requested user address dose not exist in the state, it returns the default data.
+///
+/// Caller: Any accounts / Any contracts
+///
+/// This function is designed to be called by the following smart contract functions.
+/// * overlay-projects.curate_project
+/// * overlay-projects.curate_project_admin
+/// * overlay-projects.validate_project
+/// * overlay-projects.validate_project_admin
 #[receive(
     contract = "overlay-users",
     name = "view_user",
@@ -346,6 +365,10 @@ fn contract_view_user<S: HasStateApi>(
 }
 
 type ViewUsersResponse = Vec<(AccountAddress, UserState)>;
+
+/// View the all user state.
+///
+/// Caller: Any accounts / Any contracts
 #[receive(
     contract = "overlay-users",
     name = "view_users",
@@ -365,10 +388,10 @@ fn contract_view_users<S: HasStateApi>(
     Ok(users_response)
 }
 
-#[concordium_cfg_test]
 /// implements Debug for State inside test functions.
 /// this implementation will be build only when `concordium-std/wasm-test` feature is active.
 /// (e.g. when launched by `cargo concordium test`)
+#[concordium_cfg_test]
 impl<S: HasStateApi> Debug for State<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -387,10 +410,10 @@ impl<S: HasStateApi> Debug for State<S> {
     }
 }
 
-#[concordium_cfg_test]
 /// implements PartialEq for `claim_eq` inside test functions.
 /// this implementation will be build only when `concordium-std/wasm-test` feature is active.
 /// (e.g. when launched by `cargo concordium test`)
+#[concordium_cfg_test]
 impl<S: HasStateApi> PartialEq for State<S> {
     fn eq(&self, other: &Self) -> bool {
         if self.admin != other.admin {
@@ -426,10 +449,10 @@ impl<S: HasStateApi> PartialEq for State<S> {
     }
 }
 
-#[concordium_cfg_test]
 /// implements Debug for UserState inside test functions.
 /// this implementation will be build only when `concordium-std/wasm-test` feature is active.
 /// (e.g. when launched by `cargo concordium test`)
+#[concordium_cfg_test]
 impl Debug for UserState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -440,10 +463,10 @@ impl Debug for UserState {
     }
 }
 
-#[concordium_cfg_test]
 /// implements PartialEq for `claim_eq` inside test functions.
 /// this implementation will be build only when `concordium-std/wasm-test` feature is active.
 /// (e.g. when launched by `cargo concordium test`)
+#[concordium_cfg_test]
 impl PartialEq for UserState {
     fn eq(&self, other: &Self) -> bool {
         if self.is_curator != other.is_curator {
