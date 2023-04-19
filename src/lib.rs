@@ -38,49 +38,49 @@ struct UserState {
 
 /// The parameter schema for `transfer_admin` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct TransferAdminParam {
+struct TransferAdminParams {
     admin: AccountAddress,
 }
 
 /// The parameter schema for `add_project_contract` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct AddProjectContractParam {
+struct AddProjectContractParams {
     project_contract_addr: ContractAddress,
 }
 
 /// Single account address parameter that is commonly used.
 #[derive(Serial, Deserial, SchemaType)]
-struct AddrParam {
+struct AddrParams {
     addr: AccountAddress,
 }
 /// The parameter schema for `add_curator` function.
-type AddCuratorParam = AddrParam;
+type AddCuratorParams = AddrParams;
 /// The parameter schema for `remove_curator` function.
-type RemoveCuratorParam = AddrParam;
+type RemoveCuratorParams = AddrParams;
 /// The parameter schema for `add_validator` function.
-type AddValidatorParam = AddrParam;
+type AddValidatorParams = AddrParams;
 /// The parameter schema for `remove_validator` function.
-type RemoveValidatorParam = AddrParam;
+type RemoveValidatorParams = AddrParams;
 /// The parameter schema for `view_user` function.
-type ViewUserParam = AddrParam;
+type ViewUserParams = AddrParams;
 
 /// The parameter schema for `curate` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct CurateParam {
+struct CurateParams {
     addr: AccountAddress,
     project_id: ProjectId,
 }
 
 /// The parameter schema for `validate` function.
 #[derive(Serial, Deserial, SchemaType)]
-struct ValidateParam {
+struct ValidateParams {
     addr: AccountAddress,
     project_id: ProjectId,
 }
 
 /// The parameter schema for `upgrade` function.
 #[derive(Debug, Serialize, SchemaType)]
-struct UpgradeParam {
+struct UpgradeParams {
     module: ModuleReference,
     migrate: Option<(OwnedEntrypointName, OwnedParameter)>,
 }
@@ -136,7 +136,7 @@ fn contract_init<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "transfer_admin",
-    parameter = "TransferAdminParam",
+    parameter = "TransferAdminParams",
     mutable,
     error = "Error"
 )]
@@ -144,7 +144,7 @@ fn contract_transfer_admin<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: TransferAdminParam = ctx.parameter_cursor().get()?;
+    let params: TransferAdminParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     state.admin = params.admin;
@@ -159,7 +159,7 @@ fn contract_transfer_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "add_project_contract",
-    parameter = "AddProjectContractParam",
+    parameter = "AddProjectContractParams",
     mutable,
     error = "Error"
 )]
@@ -167,7 +167,7 @@ fn contract_add_project_contract<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<()> {
-    let params: AddProjectContractParam = ctx.parameter_cursor().get()?;
+    let params: AddProjectContractParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     state.project_contract_addr = params.project_contract_addr;
@@ -183,14 +183,14 @@ fn contract_add_project_contract<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "add_curator",
-    parameter = "AddCuratorParam",
+    parameter = "AddCuratorParams",
     mutable
 )]
 fn contract_add_curator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: AddCuratorParam = ctx.parameter_cursor().get()?;
+    let params: AddCuratorParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     state
@@ -217,14 +217,14 @@ fn contract_add_curator<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "remove_curator",
-    parameter = "RemoveCuratorParam",
+    parameter = "RemoveCuratorParams",
     mutable
 )]
 fn contract_remove_curator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: RemoveCuratorParam = ctx.parameter_cursor().get()?;
+    let params: RemoveCuratorParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     state.user.entry(params.addr).and_modify(|user_state| {
@@ -243,14 +243,14 @@ fn contract_remove_curator<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "add_validator",
-    parameter = "AddValidatorParam",
+    parameter = "AddValidatorParams",
     mutable
 )]
 fn contract_add_validator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: AddValidatorParam = ctx.parameter_cursor().get()?;
+    let params: AddValidatorParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
     state
@@ -277,14 +277,14 @@ fn contract_add_validator<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "remove_validator",
-    parameter = "RemoveValidatorParam",
+    parameter = "RemoveValidatorParams",
     mutable
 )]
 fn contract_remove_validator<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: RemoveValidatorParam = ctx.parameter_cursor().get()?;
+    let params: RemoveValidatorParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(ctx.invoker() == state.admin, Error::InvalidCaller);
 
@@ -307,14 +307,14 @@ fn contract_remove_validator<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "curate",
-    parameter = "CurateParam",
+    parameter = "CurateParams",
     mutable
 )]
 fn contract_curate<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: CurateParam = ctx.parameter_cursor().get()?;
+    let params: CurateParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(
         ctx.sender() == Address::Contract(state.project_contract_addr),
@@ -342,14 +342,14 @@ fn contract_curate<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "validate",
-    parameter = "ValidateParam",
+    parameter = "ValidateParams",
     mutable
 )]
 fn contract_validate<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &mut impl HasHost<State<S>>,
 ) -> ContractResult<()> {
-    let params: ValidateParam = ctx.parameter_cursor().get()?;
+    let params: ValidateParams = ctx.parameter_cursor().get()?;
     let state = host.state_mut();
     ensure!(
         ctx.sender() == Address::Contract(state.project_contract_addr),
@@ -370,7 +370,7 @@ fn contract_validate<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "upgrade",
-    parameter = "UpgradeParam",
+    parameter = "UpgradeParams",
     mutable
 )]
 fn contract_upgrade<S: HasStateApi>(
@@ -378,7 +378,7 @@ fn contract_upgrade<S: HasStateApi>(
     host: &mut impl HasHost<State<S>, StateApiType = S>,
 ) -> ReceiveResult<()> {
     ensure!(ctx.sender().matches_account(&ctx.owner()));
-    let params: UpgradeParam = ctx.parameter_cursor().get()?;
+    let params: UpgradeParams = ctx.parameter_cursor().get()?;
     host.upgrade(params.module)?;
     if let Some((func, parameter)) = params.migrate {
         host.invoke_contract_raw(
@@ -426,14 +426,14 @@ fn contract_view_admin<S: HasStateApi>(
 #[receive(
     contract = "overlay-users",
     name = "view_user",
-    parameter = "ViewUserParam",
+    parameter = "ViewUserParams",
     return_value = "UserState"
 )]
 fn contract_view_user<S: HasStateApi>(
     ctx: &impl HasReceiveContext,
     host: &impl HasHost<State<S>, StateApiType = S>,
 ) -> ContractResult<ViewUserResponse> {
-    let params: ViewUserParam = ctx.parameter_cursor().get()?;
+    let params: ViewUserParams = ctx.parameter_cursor().get()?;
     let state = host.state();
     let user_state = state
         .user
@@ -634,7 +634,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = TransferAdminParam {
+        let params = TransferAdminParams {
             admin: try_to_transfer_to,
         };
         let params_byte = to_bytes(&params);
@@ -671,7 +671,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = TransferAdminParam {
+        let params = TransferAdminParams {
             admin: try_to_transfer_to,
         };
         let params_byte = to_bytes(&params);
@@ -709,7 +709,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddProjectContractParam {
+        let params = AddProjectContractParams {
             project_contract_addr: project_contract_addr_to_be_set,
         };
         let params_byte = to_bytes(&params);
@@ -746,7 +746,7 @@ mod tests {
 
         // create parameters
         let project_contract_addr = ContractAddress::new(1, 2);
-        let params = AddProjectContractParam {
+        let params = AddProjectContractParams {
             project_contract_addr,
         };
         let params_byte = to_bytes(&params);
@@ -815,7 +815,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddCuratorParam { addr: curator };
+        let params = AddCuratorParams { addr: curator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -877,7 +877,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddCuratorParam {
+        let params = AddCuratorParams {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -913,7 +913,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddCuratorParam {
+        let params = AddCuratorParams {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -972,7 +972,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = RemoveCuratorParam {
+        let params = RemoveCuratorParams {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -1038,7 +1038,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = RemoveCuratorParam { addr: not_curator };
+        let params = RemoveCuratorParams { addr: not_curator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -1072,7 +1072,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = RemoveCuratorParam {
+        let params = RemoveCuratorParams {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -1141,7 +1141,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddValidatorParam { addr: validator };
+        let params = AddValidatorParams { addr: validator };
         let params_byte = to_bytes(&params);
         ctx.set_parameter(&params_byte);
 
@@ -1203,7 +1203,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddValidatorParam {
+        let params = AddValidatorParams {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -1239,7 +1239,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddValidatorParam {
+        let params = AddValidatorParams {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -1298,7 +1298,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = RemoveValidatorParam {
+        let params = RemoveValidatorParams {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -1364,7 +1364,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = RemoveValidatorParam {
+        let params = RemoveValidatorParams {
             addr: not_validator,
         };
         let params_byte = to_bytes(&params);
@@ -1400,7 +1400,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = RemoveValidatorParam {
+        let params = RemoveValidatorParams {
             addr: AccountAddress([2; 32]),
         };
         let params_byte = to_bytes(&params);
@@ -1460,7 +1460,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = CurateParam {
+        let params = CurateParams {
             addr: existing_user,
             project_id: project_id.clone(),
         };
@@ -1497,7 +1497,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = CurateParam {
+        let params = CurateParams {
             addr: existing_user,
             project_id: "TEST-PRJ".into(),
         };
@@ -1529,7 +1529,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = CurateParam {
+        let params = CurateParams {
             addr: AccountAddress([2; 32]),
             project_id: "TEST-PRJ".into(),
         };
@@ -1590,7 +1590,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = ValidateParam {
+        let params = ValidateParams {
             addr: existing_user,
             project_id: project_id.clone(),
         };
@@ -1627,7 +1627,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = ValidateParam {
+        let params = ValidateParams {
             addr: existing_user,
             project_id: "TEST-PRJ".into(),
         };
@@ -1659,7 +1659,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = ValidateParam {
+        let params = ValidateParams {
             addr: AccountAddress([2; 32]),
             project_id: "TEST-PRJ".into(),
         };
@@ -1691,7 +1691,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = UpgradeParam {
+        let params = UpgradeParams {
             module: HashBytes::new([0; 32]),
             migrate: None,
         };
@@ -1787,7 +1787,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = AddrParams {
             addr: existing_user,
         };
         let params_byte = to_bytes(&params);
@@ -1836,7 +1836,7 @@ mod tests {
         let mut host = TestHost::new(state, state_builder);
 
         // create parameters
-        let params = AddrParam {
+        let params = AddrParams {
             addr: non_existing_user,
         };
         let params_byte = to_bytes(&params);
