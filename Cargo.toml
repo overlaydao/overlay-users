@@ -1,12 +1,30 @@
 [package]
 name = "overlay-users"
+description = "Concordium smart contract modelling OVERLAY users."
 version = "0.1.0"
+authors = [
+    "kosamit <kosamit@gmail.com>",
+    "hashmimic <hashmimic1@gmail.com>",
+    "Hiroki Tanaka <hiroki.tanaka@kumano-te.com>"
+]
 edition = "2021"
+license = "MPL-2.0"
+publish = false
+homepage = "https://overlay.global/"
+repository = "https://github.com/overlaydao/overlay-users"
+rust-version = "1.68.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["std"]
+std = ["concordium-std/std"]
+
 [dependencies]
-concordium-std = "5.0.0"
+concordium-std = { version = "6.1.0", default-features = false }
+
+[dev-dependencies]
+concordium-std = { version = "6.1.0", features = ["std"] }
 
 [lib]
 crate-type=["cdylib", "rlib"]

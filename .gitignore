@@ -25,3 +25,6 @@ tmp*
 test.sh
 
 overlay_users
+
+# ide
+.idea/
